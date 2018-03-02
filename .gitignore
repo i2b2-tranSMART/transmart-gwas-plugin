@@ -1,12 +1,17 @@
-/.idea/
-/target/
-*.out
 *.iml
-
-# - Eclipse
-.settings
+*.ipr
+*.iws
+*.log
+*.sublime-workspace
 .classpath
+.DS_Store
+.idea
 .project
-eclipse-target
-
-
+.settings
+/web-app/WEB-INF
+cobertura.ser
+grails-*.zip
+grails-*.zip.sha1
+plugin.xml
+target
+target-eclipse
