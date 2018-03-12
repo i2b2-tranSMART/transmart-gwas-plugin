@@ -1,59 +1,44 @@
 package com.recomdata.grails.plugin.gwas
 
-import org.apache.log4j.Logger
 import org.transmart.biomart.BioAssayAnalysisDataIdx
 
 class GwasSearchService {
-    static Logger log = Logger.getLogger(GwasSearchService.class)
 
-    def getGwasData(analysisId) {
-        getGwasData(analysisId, null)
-    }
+	static transactional = false
 
-    def getGwasData(analysisId, ranges) {
-        def queryParams = [parAnalysisId: analysisId]
-        StringBuilder qb = new StringBuilder("""
-					SELECT	gwas.rsId,
-							gwas.pValue,
-							gwas.logPValue,
-							gwas.ext_data
-					FROM	BioAssayAnalysisGwas gwas
-					WHERE	gwas.analysis.id = :parAnalysisId""")
+	List<Object[]> getGwasData(analysisId) {
+		getGwasData(analysisId, null)
+	}
 
-        if (ranges) {
-            qb.append(" AND gwas.rsId IN (:parSearchProbes)");
-        }
-        def results = BioAssayAnalysisGwas.executeQuery(qb.toString(), queryParams, [max: 100])
-        return results
-    }
+	List<Object[]> getGwasData(analysisId, ranges) {
+		String hql = '''
+				SELECT gwas.rsId, gwas.pValue, gwas.logPValue, gwas.ext_data
+				FROM	BioAssayAnalysisGwas gwas
+				WHERE	gwas.analysis.id = :parAnalysisId'''
+		if (ranges) {
+			hql += ' AND gwas.rsId IN (:parSearchProbes)'
+		}
 
-    def getGwasIndexData() {
-        def results = BioAssayAnalysisDataIdx.findAllByExt_type("GWAS", [sort: "display_idx", order: "asc"])
+		BioAssayAnalysisGwas.executeQuery(hql, [parAnalysisId: analysisId], [max: 100])
+	}
 
-        return results
-    }
+	List<BioAssayAnalysisDataIdx> getGwasIndexData() {
+		BioAssayAnalysisDataIdx.findAllByExt_type('GWAS', [sort: 'display_idx', order: 'asc'])
+	}
 
-    def getEqtlIndexData() {
-        def results = BioAssayAnalysisDataIdx.findAllByExt_type("EQTL", [sort: "display_idx", order: "asc"])
+	List<BioAssayAnalysisDataIdx> getEqtlIndexData() {
+		BioAssayAnalysisDataIdx.findAllByExt_type('EQTL', [sort: 'display_idx', order: 'asc'])
+	}
 
-        return results
-    }
+	List<Object[]> getEqtlData(analysisId) {
+		getEqtlData(analysisId, null)
+	}
 
-    def getEqtlData(analysisId) {
-        getEqtlData(analysisId, null)
-    }
-
-    def getEqtlData(analysisId, searchProbes) {
-        def results = BioAssayAnalysisEqtl.executeQuery("""
-			SELECT	eqtl.rsId,
-					eqtl.pValue,
-					eqtl.logPValue,
-					eqtl.ext_data
+	List<Object[]> getEqtlData(analysisId, searchProbes) {
+		BioAssayAnalysisEqtl.executeQuery('''
+			SELECT eqtl.rsId,eqtl.pValue,eqtl.logPValue,eqtl.ext_data
 			FROM	BioAssayAnalysisEqtl eqtl
 			WHERE	eqtl.analysis.id = :parAnalaysisId
-			""", [parAnalaysisId: analysisId], [max: 100])
-
-        return results
-    }
-
+			''', [parAnalaysisId: analysisId], [max: 100])
+	}
 }
