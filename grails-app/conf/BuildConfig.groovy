@@ -20,6 +20,7 @@ grails.project.dependency.resolution = {
 
 	plugins {
 		compile ':cache:1.1.8'
+		compile ':hibernate:3.6.10.19', { export = false }
 		compile ':mail:1.0'
 
 		compile ':folder-management:18.1-SNAPSHOT'
