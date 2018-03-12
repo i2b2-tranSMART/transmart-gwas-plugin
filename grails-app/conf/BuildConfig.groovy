@@ -20,9 +20,11 @@ grails.project.dependency.resolution = {
 
 	plugins {
 		compile ':cache:1.1.8'
-		compile ':folder-management:18.1-SNAPSHOT'
 		compile ':mail:1.0'
+
+		compile ':folder-management:18.1-SNAPSHOT'
 		compile ':search-domain:18.1-SNAPSHOT'
+		compile ':transmart-core:18.1-SNAPSHOT'
 
 		build ':release:3.1.2', ':rest-client-builder:2.1.1', {
 			export = false
