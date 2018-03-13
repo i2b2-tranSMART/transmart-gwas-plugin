@@ -286,7 +286,8 @@ class GwasWebService {
 	}
 
 	private static final String geneLimitsSqlQueryByKeyword = '''
-		SELECT max(snpinfo.pos) as high, min(snpinfo.pos) as low, min(snpinfo.chrom) as chrom FROM SEARCHAPP.SEARCH_KEYWORD
+		SELECT max(snpinfo.pos) as high, min(snpinfo.pos) as low, min(snpinfo.chrom) as chrom
+		FROM SEARCHAPP.SEARCH_KEYWORD
 		INNER JOIN BIOMART.bio_marker bm ON bm.BIO_MARKER_ID = SEARCH_KEYWORD.BIO_DATA_ID
 		INNER JOIN deapp.de_snp_gene_map gmap ON gmap.entrez_gene_id = bm.PRIMARY_EXTERNAL_ID
 		INNER JOIN DEAPP.DE_RC_SNP_INFO snpinfo ON gmap.snp_name = snpinfo.rs_id
@@ -294,7 +295,8 @@ class GwasWebService {
 	'''
 
 	private static final String geneLimitsSqlQueryById = '''
-		SELECT BIO_MARKER_ID, max(snpinfo.pos) as high, min(snpinfo.pos) as low, min(snpinfo.chrom) as chrom from bio_marker bm
+		SELECT BIO_MARKER_ID, max(snpinfo.pos) as high, min(snpinfo.pos) as low, min(snpinfo.chrom) as chrom
+		from BIOMART.bio_marker bm
 		INNER JOIN deapp.de_snp_gene_map gmap ON gmap.entrez_gene_id = bm.PRIMARY_EXTERNAL_ID
 		INNER JOIN DEAPP.DE_RC_SNP_INFO snpinfo ON gmap.snp_name = snpinfo.rs_id
 		WHERE BIO_MARKER_ID = ? AND snpinfo.hg_version = ?
@@ -302,41 +304,50 @@ class GwasWebService {
 	'''
 
 	private static final String geneLimitsSqlQueryByEntrez = '''
-		SELECT BIO_MARKER_ID, max(snpinfo.pos) as high, min(snpinfo.pos) as low, min(snpinfo.chrom) as chrom from deapp.de_snp_gene_map gmap
+		SELECT BIO_MARKER_ID, max(snpinfo.pos) as high, min(snpinfo.pos) as low, min(snpinfo.chrom) as chrom
+		from deapp.de_snp_gene_map gmap
 		INNER JOIN DEAPP.DE_RC_SNP_INFO snpinfo ON gmap.snp_name = snpinfo.rs_id
-	    INNER JOIN BIO_MARKER bm ON CAST(gmap.entrez_gene_id as varchar(200)) = bm.PRIMARY_EXTERNAL_ID AND bm.PRIMARY_SOURCE_CODE = 'Entrez'
+		INNER JOIN BIOMART.BIO_MARKER bm ON CAST(gmap.entrez_gene_id as varchar(200)) = bm.PRIMARY_EXTERNAL_ID AND bm.PRIMARY_SOURCE_CODE = 'Entrez'
 		WHERE gmap.entrez_gene_id = ? AND snpinfo.hg_version = ?
-	    GROUP BY BIO_MARKER_ID
+		GROUP BY BIO_MARKER_ID
 	'''
 
 	private static final String genePositionSqlQuery = '''
-		SELECT DISTINCT BIO_MARKER_ID, ENTREZ_GENE_ID, BIO_MARKER_NAME, BIO_MARKER_DESCRIPTION FROM deapp.de_snp_gene_map gmap
+		SELECT DISTINCT BIO_MARKER_ID, ENTREZ_GENE_ID, BIO_MARKER_NAME, BIO_MARKER_DESCRIPTION
+		FROM deapp.de_snp_gene_map gmap
 		INNER JOIN DEAPP.DE_RC_SNP_INFO snpinfo ON gmap.snp_name = snpinfo.rs_id
-		INNER JOIN BIO_MARKER bm ON bm.primary_external_id = CAST(gmap.entrez_gene_id as varchar(200))
+		INNER JOIN BIOMART.BIO_MARKER bm ON bm.primary_external_id = CAST(gmap.entrez_gene_id as varchar(200))
 		WHERE chrom = ? AND pos >= ? AND pos <= ? AND HG_VERSION = ?
 	'''
 
 	// changed study_name to accession because GWAVA needs short name.
 	private static final String modelInfoSqlQuery = '''
 		SELECT baa.bio_assay_analysis_id as id, ext.model_name as modelName, baa.analysis_name as analysisName, be.accession as studyName
-		FROM bio_assay_analysis baa
-		LEFT JOIN bio_assay_analysis_ext ext ON baa.bio_assay_analysis_id = ext.bio_assay_analysis_id
-		LEFT JOIN bio_experiment be ON baa.etl_id = be.accession
+		FROM BIOMART.bio_assay_analysis baa
+		LEFT JOIN BIOMART.bio_assay_analysis_ext ext ON baa.bio_assay_analysis_id = ext.bio_assay_analysis_id
+		LEFT JOIN BIOMART.bio_experiment be ON baa.etl_id = be.accession
 		WHERE baa.bio_assay_data_type = ?
 	'''
 
 	//added additional query to pull gene strand information from the annotation.
 	private static final String getGeneStrand = '''
-		select strand from DEAPP.de_gene_info where gene_source_id=1 and entrez_id=?
+		select strand
+		from DEAPP.de_gene_info
+		where gene_source_id=1
+		  and entrez_id=?
 	'''
 
 	private static final String getRecombinationRatesForGeneQuery = '''
-        select position,rate
-        from biomart.bio_recombination_rates recomb,
-        (select CASE WHEN chrom_start between 0 and ? THEN 0 ELSE (chrom_start-?) END s, (chrom_stop+?) e, chrom
-        from deapp.de_gene_info g where gene_symbol=? order by chrom_start) geneSub
-        where recomb.chromosome=(geneSub.chrom) and position between s and e order by position
-    '''
+		select position,rate
+		from biomart.bio_recombination_rates recomb,
+		(select CASE WHEN chrom_start between 0 and ? THEN 0 ELSE (chrom_start-?) END s, (chrom_stop+?) e, chrom
+		 from deapp.de_gene_info g
+		 where gene_symbol=?
+		 order by chrom_start) geneSub
+		where recomb.chromosome=(geneSub.chrom)
+		  and position between s and e
+		order by position
+	'''
 
 	private static final String snpSearchQuery = '''
         with data_subset as
@@ -358,30 +369,32 @@ class GwasWebService {
 
 	private static final String analysisDataSqlQueryGwas = '''
 		SELECT gwas.rs_id as rsid, gwas.bio_asy_analysis_gwas_id as resultid, gwas.bio_assay_analysis_id as analysisid, 
-    	gwas.p_value as pvalue, gwas.log_p_value as logpvalue, be.accession as studyname, baa.analysis_name as analysisname, 
-    	baa.bio_assay_data_type AS datatype, info.pos as posstart, info.chrom as chromosome, info.gene_name as gene,
-    	info.exon_intron as intronexon, info.recombination_rate as recombinationrate, info.regulome_score as regulome
+		       gwas.p_value as pvalue, gwas.log_p_value as logpvalue, be.accession as studyname, baa.analysis_name as analysisname, 
+		       baa.bio_assay_data_type AS datatype, info.pos as posstart, info.chrom as chromosome, info.gene_name as gene,
+		       info.exon_intron as intronexon, info.recombination_rate as recombinationrate, info.regulome_score as regulome
 		FROM biomart.Bio_Assay_Analysis_Gwas gwas
 		LEFT JOIN deapp.de_rc_snp_info info ON gwas.rs_id = info.rs_id
 		LEFT JOIN biomart.Bio_Assay_Analysis baa ON baa.bio_assay_analysis_id = gwas.bio_assay_analysis_id
 		LEFT JOIN biomart.bio_experiment be ON be.accession = baa.etl_id
 		WHERE (info.pos BETWEEN ? AND ?)
-		AND chrom = ? AND info.hg_version = ?
-    	AND gwas.bio_assay_analysis_id IN (
+		  AND chrom = ?
+		  AND info.hg_version = ?
+    	  AND gwas.bio_assay_analysis_id IN (
 	'''
 
 	private static final String analysisDataSqlQueryEqtl = '''
 		SELECT eqtl.rs_id as rsid, eqtl.bio_asy_analysis_data_id as resultid, eqtl.bio_assay_analysis_id as analysisid,
-		eqtl.p_value as pvalue, eqtl.log_p_value as logpvalue, be.title as studyname, baa.analysis_name as analysisname,
-		baa.bio_assay_data_type AS datatype, info.pos as posstart, info.chrom as chromosome, info.gene_name as gene,
-		info.exon_intron as intronexon, info.recombination_rate as recombinationrate, info.regulome_score as regulome
+		       eqtl.p_value as pvalue, eqtl.log_p_value as logpvalue, be.title as studyname, baa.analysis_name as analysisname,
+		       baa.bio_assay_data_type AS datatype, info.pos as posstart, info.chrom as chromosome, info.gene_name as gene,
+		       info.exon_intron as intronexon, info.recombination_rate as recombinationrate, info.regulome_score as regulome
 		FROM biomart.Bio_Assay_Analysis_eqtl eqtl
 		LEFT JOIN deapp.de_rc_snp_info info ON eqtl.rs_id = info.rs_id
 		LEFT JOIN biomart.Bio_Assay_Analysis baa ON baa.bio_assay_analysis_id = eqtl.bio_assay_analysis_id
 		LEFT JOIN biomart.bio_experiment be ON be.accession = baa.etl_id
 		WHERE (info.pos BETWEEN ? AND ?)
-		AND chrom = ? AND info.hg_version = ?
-		AND eqtl.bio_assay_analysis_id IN (
+		  AND chrom = ?
+		  AND info.hg_version = ?
+		  AND eqtl.bio_assay_analysis_id IN (
 	'''
 
 	private static final String recombinationRateBySnpQuery = '''
@@ -393,9 +406,10 @@ class GwasWebService {
 		    FROM DEAPP.DE_RC_SNP_INFO
 		    WHERE RS_ID=? and hg_version=?
 		)
-		SELECT chromosome, position, rate, map FROM BIOMART.BIO_RECOMBINATION_RATES
+		SELECT chromosome, position, rate, map
+		FROM BIOMART.BIO_RECOMBINATION_RATES
 		WHERE POSITION > (SELECT low FROM snp_info)
-		AND POSITION < (SELECT high FROM snp_info)
-		AND CHROMOSOME = (SELECT chrom FROM snp_info) order by position
+		  AND POSITION < (SELECT high FROM snp_info)
+		  AND CHROMOSOME = (SELECT chrom FROM snp_info) order by position
 	'''
 }

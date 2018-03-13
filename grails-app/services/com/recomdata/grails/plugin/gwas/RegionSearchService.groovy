@@ -306,24 +306,26 @@ class RegionSearchService {
 	}
 
 	private static final String geneLimitsSqlQuery = '''
-		SELECT max(snpinfo.pos) as high, min(snpinfo.pos) as low, min(snpinfo.chrom) as chrom FROM SEARCHAPP.SEARCH_KEYWORD
-		INNER JOIN bio_marker bm ON bm.BIO_MARKER_ID = SEARCH_KEYWORD.BIO_DATA_ID
+		SELECT max(snpinfo.pos) as high, min(snpinfo.pos) as low, min(snpinfo.chrom) as chrom
+		FROM SEARCHAPP.SEARCH_KEYWORD
+		INNER JOIN BIOMART.bio_marker bm ON bm.BIO_MARKER_ID = SEARCH_KEYWORD.BIO_DATA_ID
 		INNER JOIN deapp.de_snp_gene_map gmap ON gmap.entrez_gene_id = bm.PRIMARY_EXTERNAL_ID
 		INNER JOIN DEAPP.DE_RC_SNP_INFO snpinfo ON gmap.snp_name = snpinfo.rs_id
-		WHERE SEARCH_KEYWORD_ID=? AND snpinfo.hg_version = ?
+		WHERE SEARCH_KEYWORD_ID=?
+		  AND snpinfo.hg_version = ?
 	'''
 
 	private static final String geneLimitsHg19SqlQuery = '''
 		SELECT ginfo.chrom_stop as high, ginfo.chrom_start as low, ginfo.chrom
 		FROM SEARCHAPP.SEARCH_KEYWORD
-		INNER JOIN bio_marker bm ON bm.BIO_MARKER_ID = SEARCH_KEYWORD.BIO_DATA_ID
+		INNER JOIN BIOMART.bio_marker bm ON bm.BIO_MARKER_ID = SEARCH_KEYWORD.BIO_DATA_ID
 		INNER JOIN deapp.de_gene_info ginfo ON ginfo.entrez_id = bm.PRIMARY_EXTERNAL_ID
 		WHERE SEARCH_KEYWORD_ID=?
 	'''
 
 	private static final String genesForSnpQuery = '''
 		SELECT DISTINCT(GENE_NAME) as BIO_MARKER_NAME
-		FROM DE_SNP_GENE_MAP
+		FROM DEAPP.DE_SNP_GENE_MAP
 		WHERE SNP_NAME = ?
 	'''
 
@@ -331,12 +333,14 @@ class RegionSearchService {
 		SELECT max(snpinfo.pos) as high, min(snpinfo.pos) as low, min(snpinfo.chrom) as chrom
 		FROM SEARCHAPP.SEARCH_KEYWORD sk
 		INNER JOIN DEAPP.DE_RC_SNP_INFO snpinfo ON sk.keyword = snpinfo.rs_id
-		WHERE SEARCH_KEYWORD_ID=? AND snpinfo.hg_version = ?
+		WHERE SEARCH_KEYWORD_ID=?
+		  AND snpinfo.hg_version = ?
 	'''
 
 	private static final String analysisNameSqlQuery = '''
 		SELECT DATA.bio_assay_analysis_id as id, DATA.analysis_name as name
-		FROM BIOMART.bio_assay_analysis DATA WHERE 1=1 
+		FROM BIOMART.bio_assay_analysis DATA
+		WHERE 1=1 
 	'''
 
 	//Query with mad Oracle pagination
@@ -346,8 +350,7 @@ class RegionSearchService {
 		                 info.pos AS pos, info.gene_name AS rsgene,
 		                 DATA.rs_id AS rsid, DATA.p_value AS pvalue,
 		                 DATA.log_p_value AS logpvalue, DATA.ext_data AS extdata,
-		                 info.exon_intron as intronexon, info.recombination_rate as recombinationrate, info.regulome_score as regulome
-		                 ,
+		                 info.exon_intron as intronexon, info.recombination_rate as recombinationrate, info.regulome_score as regulome,
 		                 ROW_NUMBER () OVER (ORDER BY _orderclause_) AS row_nbr
 		                 FROM biomart.bio_assay_analysis_gwas DATA
 		                 _analysisJoin_
@@ -362,8 +365,7 @@ class RegionSearchService {
 					 info.pos AS pos, info.rsgene AS rsgene,
 					 DATA.rs_id AS rsid, DATA.p_value AS pvalue,
 					 DATA.log_p_value AS logpvalue, DATA.ext_data AS extdata,
-					 info.exon_intron as intronexon, info.recombination_rate as recombinationrate, info.regulome_score as regulome
-					 ,
+					 info.exon_intron as intronexon, info.recombination_rate as recombinationrate, info.regulome_score as regulome,
 					 ROW_NUMBER () OVER (ORDER BY _orderclause_) AS row_nbr
 					 FROM biomart.bio_assay_analysis_gwas DATA
 					 _analysisJoin_
@@ -377,8 +379,7 @@ class RegionSearchService {
 		                 info.pos AS pos, info.gene_name AS rsgene,
 		                 DATA.rs_id AS rsid, DATA.p_value AS pvalue,
 		                 DATA.log_p_value AS logpvalue, DATA.ext_data AS extdata, DATA.gene as gene,
-		                 info.exon_intron as intronexon, info.recombination_rate as recombinationrate, info.regulome_score as regulome
-		                 ,
+		                 info.exon_intron as intronexon, info.recombination_rate as recombinationrate, info.regulome_score as regulome,
 		                 ROW_NUMBER () OVER (ORDER BY _orderclause_) AS row_nbr
 		                 FROM biomart.bio_assay_analysis_eqtl DATA
 		                 _analysisJoin_
@@ -392,8 +393,7 @@ class RegionSearchService {
 					 info.pos AS pos, info.rsgene AS rsgene,
 					 DATA.rs_id AS rsid, DATA.p_value AS pvalue,
 					 DATA.log_p_value AS logpvalue, DATA.ext_data AS extdata, DATA.gene as gene,
-					 info.exon_intron as intronexon, info.recombination_rate as recombinationrate, info.regulome_score as regulome
-					 ,
+					 info.exon_intron as intronexon, info.recombination_rate as recombinationrate, info.regulome_score as regulome,
 					 ROW_NUMBER () OVER (ORDER BY _orderclause_) AS row_nbr
 					 FROM biomart.bio_assay_analysis_eqtl DATA
 					 _analysisJoin_
@@ -402,25 +402,29 @@ class RegionSearchService {
 	'''
 
 	private static final String gwasSqlCountQuery = '''
-		SELECT COUNT(*) AS TOTAL FROM biomart.Bio_Assay_Analysis_Gwas data 
-	     JOIN deapp.de_rc_snp_info info ON DATA.rs_id = info.rs_id and (_regionlist_)
-	     WHERE 1=1
+		SELECT COUNT(*) AS TOTAL
+		FROM biomart.Bio_Assay_Analysis_Gwas data 
+		JOIN deapp.de_rc_snp_info info ON DATA.rs_id = info.rs_id and (_regionlist_)
+		WHERE 1=1
 	'''
 
 	private static final String gwasHg19SqlCountQuery = '''
-		SELECT COUNT(*) AS TOTAL FROM biomart.Bio_Assay_Analysis_Gwas data
-		 JOIN deapp.de_snp_info_hg19_mv info ON DATA.rs_id = info.rs_id and (_regionlist_)
-		 WHERE 1=1
+		SELECT COUNT(*) AS TOTAL
+		FROM biomart.Bio_Assay_Analysis_Gwas data
+		JOIN deapp.de_snp_info_hg19_mv info ON DATA.rs_id = info.rs_id and (_regionlist_)
+		WHERE 1=1
 	'''
 
 	private static final String eqtlSqlCountQuery = '''
-		SELECT COUNT(*) AS TOTAL FROM biomart.Bio_Assay_Analysis_Eqtl data
+		SELECT COUNT(*) AS TOTAL
+		FROM biomart.Bio_Assay_Analysis_Eqtl data
 		JOIN deapp.de_rc_snp_info info ON DATA.rs_id = info.rs_id and (_regionlist_)
 		WHERE 1=1
 	'''
 
 	private static final String eqtlHg19SqlCountQuery = '''
-		SELECT COUNT(*) AS TOTAL FROM biomart.Bio_Assay_Analysis_Eqtl data
+		SELECT COUNT(*) AS TOTAL
+		FROM biomart.Bio_Assay_Analysis_Eqtl data
 		JOIN deapp.de_snp_info_hg19_mv info ON DATA.rs_id = info.rs_id and (_regionlist_)
 		WHERE 1=1
 	'''
