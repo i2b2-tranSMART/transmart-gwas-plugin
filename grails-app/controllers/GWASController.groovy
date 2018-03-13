@@ -383,7 +383,7 @@ class GWASController {
 	 * Create the SOLR query string for the nonfaceted fields (i.e. those that are not in tree)
 	 * It will be of form ((<cat1>:'term1' OR <cat1>:'term2') AND ( (<cat2>:'term3') ) AND () .. )
 	 */
-	String createSOLRNonfacetedQueryString(List<String> queryParams) {
+	private String createSOLRNonfacetedQueryString(List<String> queryParams) {
 		StringBuilder nonfacetedQuery = new StringBuilder()
 		for (qp in queryParams) {
 
