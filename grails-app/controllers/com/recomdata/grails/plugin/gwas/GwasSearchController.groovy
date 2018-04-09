@@ -5,15 +5,15 @@ import com.recomdata.transmart.domain.searchapp.FormLayout
 import grails.converters.JSON
 import groovy.util.logging.Slf4j
 import org.apache.commons.io.FileUtils
+import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.beans.factory.annotation.Value
 import org.transmart.biomart.BioAssayAnalysis
 import org.transmart.biomart.BioAssayAnalysisDataIdx
 import org.transmart.biomart.Experiment
-import org.transmart.searchapp.AuthUser
+import org.transmart.plugin.shared.SecurityService
 import org.transmart.searchapp.GeneSignature
 import org.transmart.searchapp.GeneSignatureItem
 import org.transmart.searchapp.SearchKeyword
-import org.transmart.searchapp.SecureObject
 
 import java.lang.reflect.UndeclaredThrowableException
 import java.util.regex.Matcher
@@ -24,11 +24,14 @@ import java.util.zip.ZipOutputStream
 @Slf4j('logger')
 class GwasSearchController {
 
-	GwasSearchService gwasSearchService
-	GwasWebService gwasWebService
-	RegionSearchService regionSearchService
+	@Autowired private GwasSearchService gwasSearchService
+	@Autowired private GwasWebService gwasWebService
+	@Autowired private RegionSearchService regionSearchService
 	def RModulesJobProcessingService
-	def springSecurityService
+	@Autowired private SecurityService securityService
+
+	@Value('${grails.mail.attachments.dir:}')
+	private String mailAttachmentsDir
 
 	@Value('${com.recomdata.rwg.qqplots.cacheImages:}')
 	private String cachedImageDir
@@ -72,13 +75,6 @@ class GwasSearchController {
 	}
 
 	def webStartPlotter(String analysisIds, String snpSource, String pvalueCutoff) {
-		Map sessionUserMap = servletContext.gwasSessionUserMap
-		if (sessionUserMap == null) {
-			sessionUserMap = [:]
-			servletContext.gwasSessionUserMap = sessionUserMap
-		}
-		sessionUserMap[session.id] = springSecurityService.principal.username
-
 		List<String> regionStrings = []
 		for (List region in getWebserviceCriteria()) {
 			regionStrings << region[0] + ',' + region[1]
@@ -355,7 +351,7 @@ class GwasSearchController {
 				//Add the dynamic fields to the returned data.
 				temporaryList.addAll finalFields
 
-				returnedAnalysisData.add(temporaryList)
+				returnedAnalysisData << temporaryList
 			}
 		}
 
@@ -491,7 +487,7 @@ class GwasSearchController {
 				//Add the dynamic fields to the returned data.
 				temporaryList.addAll finalFields
 
-				returnedAnalysisData.add(temporaryList)
+				returnedAnalysisData << temporaryList
 			}
 
 			String currentWorkingDirectory = gwasWebService.createTemporaryDirectory('QQPlot-' + UUID.randomUUID()) + '/workingDirectory/'
@@ -675,15 +671,14 @@ class GwasSearchController {
 		}
 
 		// following code will limit analysis ids to ones that the user is allowed to access
-		AuthUser user = AuthUser.findByUsername(springSecurityService.principal.username)
-		Map<String, Long> secObjs = getExperimentSecureStudyList()
+		Map<String, Long> secObjs = gwasWebService.getExperimentSecureStudyList()
 		List<Object[]> analyses = BioAssayAnalysis.executeQuery('''
 				select b.id, b.name, b.etlId
 				from BioAssayAnalysis b
 				order by b.name''')
 		analyses = analyses.findAll { Object[] row ->
 			String etlId = row[2]
-			!secObjs.containsKey(etlId) || gwasWebService.getGWASAccess(etlId, user) != 'Locked'
+			!secObjs.containsKey(etlId) || gwasWebService.getGWASAccess(etlId) != 'Locked'
 		}
 		analyses = analyses.findAll { Object[] row ->
 			analysisIds.contains row[0]
@@ -1010,21 +1005,6 @@ class GwasSearchController {
 		dataWriter.close()
 	}
 
-	private Map<String, Long> getExperimentSecureStudyList() {
-		Map<String, Long> t = [:]
-		//return access levels for the children of this path that have them
-		List<Object[]> results = SecureObject.executeQuery('''
-			SELECT so.bioDataUniqueId, so.bioDataId
-			FROM SecureObject so
-			WHERE so.dataType='Experiment' ''')
-		for (Object[] row in results) {
-			String token = row[0].replaceFirst('EXP:', '')
-			Long dataid = row[1]
-			t[token] = dataid
-		}
-		t
-	}
-
 	def exportAnalysis(Double cutoff, String isLink) {
 
 		Double searchCutoff = getSearchCutoff()
@@ -1036,8 +1016,7 @@ class GwasSearchController {
 		List<String> transcriptGeneNames = getTranscriptGeneNames()
 		List<String> queryparameter = sessionSolrSearchFilter()
 
-		AuthUser user = AuthUser.findByUsername(springSecurityService.principal.username)
-		Map<String, Long> secObjs = getExperimentSecureStudyList()
+		Map<String, Long> secObjs = gwasWebService.getExperimentSecureStudyList()
 
 		if (isLink == 'true') {
 			Long analysisId = params.long('analysisId')
@@ -1055,7 +1034,7 @@ class GwasSearchController {
 			String links = ''
 			for (analysisId in params.analysisIds.split(',')) {
 				BioAssayAnalysis analysis = BioAssayAnalysis.get(analysisId)
-				String access = gwasWebService.getGWASAccess(analysis.etlId, user)
+				String access = gwasWebService.getGWASAccess(analysis.etlId)
 				if (!secObjs.containsKey(analysis.etlId) || (access != 'Locked' && access != 'VIEW')) {
 					links += link + '?analysisId=' + analysisId + '&regions=' +
 							regions.toString().replace(' ', '') + '&cutoff=' + cutoff +
@@ -1079,12 +1058,11 @@ class GwasSearchController {
 			String restrictedMsg = ''
 			String timestamp = new Date().format('yyyyMMddhhmmss')
 			String rootFolder = 'Export_' + timestamp
-			String location = grailsApplication.config.grails.mail.attachments.dir
-			String rootDir = location + File.separator + rootFolder
+			String rootDir = mailAttachmentsDir + File.separator + rootFolder
 			def analysisAIds = []
 			for (analysisId in analysisIds) {
 				BioAssayAnalysis analysis = BioAssayAnalysis.get(analysisId)
-				String access = gwasWebService.getGWASAccess(analysis.etlId, user)
+				String access = gwasWebService.getGWASAccess(analysis.etlId)
 				if (!secObjs.containsKey(analysis.etlId) || (access != 'Locked' && access != 'VIEW')) {
 					analysisAIds << analysisId.toLong()
 				}
@@ -1300,7 +1278,7 @@ class GwasSearchController {
 
 			File topDir = new File(rootDir)
 
-			File zipFile = new File(location, rootFolder + '.zip')
+			File zipFile = new File(mailAttachmentsDir, rootFolder + '.zip')
 			ZipOutputStream zipOutput = new ZipOutputStream(new FileOutputStream(zipFile))
 
 			int topDirLength = topDir.absolutePath.length()

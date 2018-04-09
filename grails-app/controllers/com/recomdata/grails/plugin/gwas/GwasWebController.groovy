@@ -19,14 +19,16 @@
 
 package com.recomdata.grails.plugin.gwas
 
+import org.springframework.beans.factory.annotation.Autowired
+
 class GwasWebController {
 
 	private static final Map<Long, String> typeIds = [1L: 'GWAS', 2L: 'EQTL', 3L: 'Metabolic GWAS'].asImmutable()
 
-	GwasWebService gwasWebService
+	@Autowired private GwasWebService gwasWebService
 
 	def computeGeneBounds(String snpSource, String geneSymbol) {
-		renderDataSet gwasWebService.computeGeneBounds(geneSymbol, '0', snpSource ?: '19')
+		renderDataSet gwasWebService.computeGeneBounds(geneSymbol, snpSource ?: '19')
 	}
 
 	def getGeneByPosition(String snpSource, String chromosome, Long start, Long stop) {
@@ -37,15 +39,8 @@ class GwasWebController {
 		renderDataSet gwasWebService.getModelInfo(typeIds[dataType] ?: 'NONE')
 	}
 
-	def getSecureModelInfoByDataType(String user, Long dataType) {
-		String type = typeIds[dataType] ?: 'NONE'
-		Map sessionUserMap = servletContext.gwasSessionUserMap
-		if (sessionUserMap == null) {
-			sessionUserMap = [:]
-			servletContext.gwasSessionUserMap = sessionUserMap
-		}
-
-		renderDataSet gwasWebService.getSecureModelInfo(type, sessionUserMap[user])
+	def getSecureModelInfoByDataType(Long dataType) {
+		renderDataSet gwasWebService.getSecureModelInfo(typeIds[dataType] ?: 'NONE')
 	}
 
 	//TODO Negotiate this name into something more reasonable
@@ -53,12 +48,12 @@ class GwasWebController {
 		if (!snpSource) {
 			snpSource = '19'
 		}
-		long range = params.long('range') ?: 0
+		long range = params.long('range', 0)
 
-		def geneBounds = gwasWebService.computeGeneBounds(geneName, '0', snpSource)
-		def low = geneBounds[0]
-		def high = geneBounds[1]
-		def chrom = geneBounds[2]
+		List geneBounds = gwasWebService.computeGeneBounds(geneName, snpSource)[0]
+		long low = geneBounds[0]
+		long high = geneBounds[1]
+		String chrom = geneBounds[2]
 
 		renderDataSet gwasWebService.getAnalysisDataBetween(modelId.split(','), low - range, high + range, chrom, snpSource)
 	}
@@ -83,7 +78,7 @@ class GwasWebController {
 		renderDataSet gwasWebService.getRecombinationRateBySnp(snp, range ?: 0, snpSource ?: '19')
 	}
 
-	def renderDataSet(results) {
+	private renderDataSet(results) {
 		render(contentType: 'text/xml', encoding: 'UTF-8') {
 			rows {
 				for (result in results) {

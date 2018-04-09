@@ -24,6 +24,7 @@ import au.com.bytecode.opencsv.CSVWriter
 import com.recomdata.upload.DataUploadResult
 import groovy.sql.Sql
 import groovy.util.logging.Slf4j
+import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.web.multipart.MultipartFile
 import org.transmart.biomart.AnalysisMetadata
@@ -37,13 +38,13 @@ class DataUploadService {
 
 	static transactional = false
 
-	DataSource dataSource
-
 	@Value('${com.recomdata.dataUpload.etl.dir:}')
 	private String etlPath
 
 	@Value('${com.recomdata.dataUpload.stageScript:}')
 	private String stageScript
+
+	@Autowired private DataSource dataSource
 
 	private DataUploadResult verifyFields(String[] providedFields, uploadType) {
 
@@ -72,7 +73,7 @@ class DataUploadService {
 				missingFields: missingFields, error: 'Required fields were missing from the uploaded file.')
 	}
 
-	BigDecimal log10(BigDecimal b, int dp) {
+	private BigDecimal log10(BigDecimal b, int dp) {
 		final int NUM_OF_DIGITS = dp + 2 // need to add one to get the right number of dp
 		//  and then add one again to get the next number
 		//  so I can round it correctly.
@@ -100,29 +101,29 @@ class DataUploadService {
 		int leftDigits = b.precision() - b.scale()
 
 		//so, the first digits of the log10 are:
-		sb.append(leftDigits - 1).append('.')
+		sb << (leftDigits - 1) << '.'
 
 		//this is the algorithm outlined in the webpage
 		int n = 0
 		while (n < NUM_OF_DIGITS) {
 			b = (b.movePointLeft(leftDigits - 1)).pow(10, mc)
 			leftDigits = b.precision() - b.scale()
-			sb.append(leftDigits - 1)
+			sb << leftDigits - 1
 			n++
 		}
 
 		BigDecimal ans = new BigDecimal(sb.toString())
 
 		//Round the number to the correct number of decimal places.
-		ans.round(new MathContext(ans.precision() - ans.scale() + dp, RoundingMode.HALF_EVEN))
+		ans.round new MathContext(ans.precision() - ans.scale() + dp, RoundingMode.HALF_EVEN)
 	}
 
-	Map<String, Integer> getColumnIndex(String uploadType) {
+	private Map<String, Integer> getColumnIndex(String uploadType) {
 		if (uploadType != 'EQTL' && uploadType != 'Metabolic GWAS') {
 			uploadType = 'GWAS'
 		}
 
-		Map columnIdx = [:]
+		Map<String, Integer> columnIdx = [:]
 		new Sql(dataSource).eachRow(getColumnIndexSql, [uploadType]) { row ->
 			columnIdx[row.field_name] = row.field_idx
 		}
@@ -187,7 +188,7 @@ class DataUploadService {
 			fileColumnIdx[columnOrder.size() + 1] = pValueIndex
 			fileColumnIdx[columnOrder.size() + 2] = logpValueIndex
 
-			/* Columns are sorted - now start writing the file */
+			// Columns are sorted - now start writing the file
 
 			csv = new CSVWriter(new FileWriter(new File(location)), '\t'.charAt(0), CSVWriter.NO_QUOTE_CHARACTER)
 			//How to specify character in Grails...?!
@@ -204,7 +205,7 @@ class DataUploadService {
 					headerRow[rowIdx] = headerList[fileColumnIdx[rowIdx]]
 				}
 			}
-			csv.writeNext(headerRow)
+			csv.writeNext headerRow
 
 			//For each line, check the value and p-value - if we have one but not the other, calculate and fill it
 			String[] nextLine
@@ -213,9 +214,9 @@ class DataUploadService {
 			int lineno = 1
 			while ((nextLine = csvRead.readNext()) != null) {
 				String[] curRow = new String[fileColumnIdx.size()]
-				def columns = nextLine.toList()
-				def currentpValue = columns[pValueIndex]
-				def currentlogpValue = columns[logpValueIndex]
+				List<String> columns = nextLine.toList()
+				String currentpValue = columns[pValueIndex]
+				String currentlogpValue = columns[logpValueIndex]
 				lineno++
 				int flag = 1
 				if (!currentpValue && !currentlogpValue) {
@@ -224,14 +225,14 @@ class DataUploadService {
 					flag = 0
 				}
 				else if (!currentpValue) {
-					columns[pValueIndex] = 0 - Math.power(10.0, Double.parseDouble(currentlogpValue))
+					columns[pValueIndex] = -Math.pow(10, Double.parseDouble(currentlogpValue)) as String
 				}
 				else if (!currentlogpValue) {
-					def logp = Math.log10(Double.parseDouble(currentpValue))
+					double logp = Math.log10(Double.parseDouble(currentpValue))
 					if (logp == Double.POSITIVE_INFINITY) {
-						logp = 0 - log10(new BigDecimal(currentpValue), 10)
+						logp = -log10(new BigDecimal(currentpValue), 10)
 					}
-					columns[logpValueIndex] = 0 - logp
+					columns[logpValueIndex] = -logp as String
 				}
 
 				//This row is now complete - write it!
@@ -245,7 +246,7 @@ class DataUploadService {
 							curRow[rowIdx] = columns[index]
 						}
 					}
-					csv.writeNext(curRow)
+					csv.writeNext curRow
 				}
 			}
 			if (pflag) {
@@ -266,19 +267,6 @@ class DataUploadService {
 		pb.directory new File(new File(etlPath).canonicalPath)
 		pb.start()
 	}
-
-	private static final String quickQueryGwas = '''
-		SELECT analysis, chrom, pos, rsgene, rsid, pvalue, logpvalue, extdata, intronexon, recombinationrate, regulome FROM biomart.BIO_ASY_ANALYSIS_GWAS_TOP50
-		WHERE analysis = ?
-		ORDER BY logpvalue desc
-	'''
-
-	private static final String quickQueryEqtl = '''
-		SELECT analysis, chrom, pos, rsgene, rsid, pvalue, logpvalue, extdata, intronexon, recombinationrate, regulome, gene
-		FROM biomart.BIO_ASY_ANALYSIS_EQTL_TOP50
-		WHERE analysis = ?
-		ORDER BY logpvalue desc
-	'''
 
 	private static final String getColumnIndexSql = 'SELECT field_name, field_idx FROM biomart.bio_asy_analysis_data_idx WHERE ext_type = ?'
 }

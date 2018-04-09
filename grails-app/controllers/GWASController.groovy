@@ -1,17 +1,18 @@
+import com.recomdata.grails.plugin.gwas.GwasWebService
 import grails.converters.JSON
 import groovy.time.TimeCategory
 import groovy.util.logging.Slf4j
 import groovy.xml.StreamingMarkupBuilder
 import org.json.JSONArray
 import org.json.JSONObject
+import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.beans.factory.annotation.Value
 import org.transmart.biomart.BioAssayAnalysis
 import org.transmart.biomart.Experiment
-import org.transmart.searchapp.AuthUser
+import org.transmart.plugin.shared.SecurityService
 import org.transmart.searchapp.BioAnalysisAttributeLineage
 import org.transmart.searchapp.SearchTaxonomy
 import org.transmart.searchapp.SearchTaxonomyRels
-import org.transmart.searchapp.SecureObject
 import org.transmartproject.db.log.AccessLogService
 
 import javax.xml.transform.OutputKeys
@@ -28,10 +29,11 @@ class GWASController {
 	private static final Map<String, String> dataTypes = [GWAS: 'GWAS', EQTL: 'eQTL', 'Metabolic GWAS': 'Metabolic GWAS',
 	                                                      'GWAS Fail': 'GWAS Fail'].asImmutable()
 
-	AccessLogService accessLogService
+	@Autowired private AccessLogService accessLogService
+	@Autowired private GwasWebService gwasWebService
 	def i2b2HelperService
 	def searchKeywordService
-	def springSecurityService
+	@Autowired private SecurityService securityService
 
 	@Value('${com.rwg.solr.scheme:}')
 	private String solrScheme
@@ -545,7 +547,7 @@ class GWASController {
 			nonfacetedQueryString = createSOLRNonfacetedQueryString(sessionFilterParams)
 		}
 		catch (e) {
-			log.error e.message, e
+			logger.error e.message, e
 		}
 
 		//TODO Patch job - if this is a *.* query, prevent it from running with a sentinel value
@@ -642,28 +644,26 @@ class GWASController {
 		int total = 0 // Running total of analysis to show in the top banner
 
 		boolean studyWithResultsFound = false
-		AuthUser user = AuthUser.findByUsername(springSecurityService.principal.username)
-		Map<String, Long> secObjs = getExperimentSecureStudyList()
-		for (studyId in studyCounts.keys().sort()) {
+		Map<String, Long> secObjs = gwasWebService.getExperimentSecureStudyList()
+		for (String studyId in studyCounts.keys().sort()) {
 
 			int c = studyCounts[studyId].toInteger()
 			if (c > 0) {
 				studyWithResultsFound = true
 
-				Long expNumber = Long.parseLong(studyId)
-				Experiment experiment = Experiment.get(expNumber)
-				if (experiment == null) {
-					logger.warn 'Unable to find an experiment for {}', expNumber
+				Experiment experiment = Experiment.get(studyId)
+				if (!experiment) {
+					logger.warn 'Unable to find an experiment for {}', studyId
 				}
 				else {
 					if (secObjs.containsKey(experiment.accession)) {
-						if (!i2b2HelperService.getGWASAccess(experiment.accession, user) == 'Locked') {
+						if (gwasWebService.getGWASAccess(experiment.accession) != 'Locked') {
 							// evaluate if user has access rights to this private study
 							exprimentAnalysis[experiment] = c
 							total += c
 						}
 						else {
-							logger.warn 'Restrict access for {}', expNumber
+							logger.warn 'Restrict access for {}', studyId
 						}
 					}
 					else {
@@ -689,20 +689,6 @@ class GWASController {
 		}
 
 		html
-	}
-
-	private Map<String, Long> getExperimentSecureStudyList() {
-		Map<String, Long> t = [:]
-		List<Object[]> results = SecureObject.executeQuery('''
-				SELECT so.bioDataUniqueId, so.bioDataId
-				FROM SecureObject so
-				WHERE so.dataType='Experiment' ''')
-		for (Object[] row in results) {
-			String token = row[0].replaceFirst('EXP:', '')
-			Long dataid = row[1]
-			t[token] = dataid
-		}
-		t
 	}
 
 	// Load the trial analysis for the given trial

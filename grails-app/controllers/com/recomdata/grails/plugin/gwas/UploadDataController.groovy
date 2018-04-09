@@ -20,9 +20,11 @@ package com.recomdata.grails.plugin.gwas
 
 import com.recomdata.upload.DataUploadResult
 import fm.FmFile
+import fm.FmFolder
 import fm.FmFolderService
 import grails.converters.JSON
-import org.codehaus.groovy.grails.commons.GrailsApplication
+import groovy.util.logging.Slf4j
+import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.web.multipart.MultipartFile
 import org.transmart.biomart.AnalysisMetadata
@@ -31,6 +33,7 @@ import org.transmart.biomart.ConceptCode
 import org.transmart.biomart.Disease
 import org.transmart.biomart.Experiment
 import org.transmart.biomart.Observation
+import org.transmart.plugin.shared.UtilService
 import org.transmartproject.db.log.AccessLogService
 
 import java.text.SimpleDateFormat
@@ -38,14 +41,15 @@ import java.text.SimpleDateFormat
 /**
  * @author DNewton
  */
+@Slf4j('logger')
 class UploadDataController {
 
 	private static final String DATE_FORMAT = 'yyyyMMddHHmmss'
 
-	AccessLogService accessLogService
-	DataUploadService dataUploadService
-	FmFolderService fmFolderService
-	GrailsApplication grailsApplication
+	@Autowired private AccessLogService accessLogService
+	@Autowired private DataUploadService dataUploadService
+	@Autowired private FmFolderService fmFolderService
+	@Autowired private UtilService utilService
 
 	@Value('${com.recomdata.FmFolderService.filestoreDirectory:}')
 	private String filestoreDirectory
@@ -59,7 +63,7 @@ class UploadDataController {
 	def index() {
 		accessLogService.report 'UploadData-Index', 'Upload Data index page'
 
-		def model = [uploadDataInstance: new AnalysisMetadata(), uploadFileInstance: new FmFile()]
+		Map model = [uploadDataInstance: new AnalysisMetadata(), uploadFileInstance: new FmFile()]
 		addFieldData model, null
 		render view: 'uploadData', model: model
 	}
@@ -70,24 +74,19 @@ class UploadDataController {
 		}
 		uploadData.sensitiveFlag = '0'
 
-		def model = [uploadDataInstance: uploadData]
+		Map model = [uploadDataInstance: uploadData]
 		addFieldData model, uploadData
 		render view: 'uploadData', model: model
 	}
 
 	def template(String type) {
-		if (!type) {
-			render status: 500, text: 'No template type given'
-			return
+		if (type) {
+			utilService.sendDownload response, 'text/plain', type + '-template.txt',
+					new File(templatesDir, filename).bytes
 		}
-
-		String filename = type + '-template.txt'
-		byte[] template = new File(templatesDir, filename).bytes
-		response.contentType = 'text/plain'
-		response.setHeader('Content-Disposition', 'attachment;filename=' + filename)
-		response.setIntHeader('Content-length', template.length)
-		response.outputStream << template
-		response.outputStream.flush()
+		else {
+			render status: 500, text: 'No template type given'
+		}
 	}
 
 	def skipp(AnalysisMetadata upload) {
@@ -109,12 +108,12 @@ class UploadDataController {
 			dataUploadService.runStaging(upload.id)
 		}
 		catch (e) {
-			log.error e.message, e
+			logger.error e.message, e
 		}
 
 		if (upload.hasErrors()) {
 			flash.message = 'The metadata could not be saved - please correct the highlighted errors.'
-			def model = [uploadDataInstance: upload]
+			Map model = [uploadDataInstance: upload]
 			addFieldData model, upload
 			render view: 'uploadData', model: model
 		}
@@ -131,10 +130,10 @@ class UploadDataController {
 			displayName = f.originalFilename
 		}
 
-		def folder = fmFolderService.getFolderByBioDataObject(Experiment.findByAccession(accession))
+		FmFolder folder = fmFolderService.getFolderByBioDataObject(Experiment.findByAccession(accession))
 		File tempFile = new File(filestoreDirectory, f.originalFilename)
 		f.transferTo tempFile
-		fmFolderService.processFile tempFile, folder, displayName, fileDescription
+		fmFolderService.processFile folder, tempFile, displayName, fileDescription
 		tempFile.delete()
 		render view: 'fileComplete'
 	}
@@ -180,7 +179,7 @@ class UploadDataController {
 				upload.save(flush: true)
 				if (e.message) {
 					flash.message2 = e.message + ". If you wish to skip those SNPs, please click 'Continue'. If you wish to reload, click 'Cancel'."
-					def model = [uploadDataInstance: upload]
+					Map model = [uploadDataInstance: upload]
 					addFieldData model, upload
 					render view: 'uploadData', model: model
 				}
@@ -209,14 +208,14 @@ class UploadDataController {
 			try {
 				dataUploadService.runStaging(upload.id)
 			}
-			catch (Exception e) {
-				log.error(e.message, e)
+			catch (e) {
+				logger.error e.message, e
 			}
 		}
 
 		if (upload.hasErrors()) {
 			flash.message = 'The metadata could not be saved - please correct the highlighted errors.'
-			def model = [uploadDataInstance: upload]
+			Map model = [uploadDataInstance: upload]
 			addFieldData model, upload
 			render view: 'uploadData', model: model
 		}
@@ -240,10 +239,10 @@ class UploadDataController {
 						meshCode = splitTag[1]
 					}
 					Disease disease = Disease.findByMeshCode(meshCode)
-					Observation observation = Observation.findByCode(meshCode)
 					if (disease) {
 						tagMap[tag] = [code: disease.meshCode, type: 'DISEASE']
 					}
+					Observation observation = Observation.findByCode(meshCode)
 					if (observation) {
 						tagMap[tag] = [code: observation.name, type: 'OBSERVATION']
 					}

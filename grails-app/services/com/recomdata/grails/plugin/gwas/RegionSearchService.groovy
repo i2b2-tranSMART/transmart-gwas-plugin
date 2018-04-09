@@ -21,7 +21,7 @@ package com.recomdata.grails.plugin.gwas
 
 import groovy.sql.Sql
 import groovy.util.logging.Slf4j
-import org.codehaus.groovy.grails.commons.GrailsApplication
+import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.beans.factory.annotation.Value
 
 import javax.sql.DataSource
@@ -31,11 +31,10 @@ class RegionSearchService {
 
 	static transactional = false
 
-	DataSource dataSource
-	GrailsApplication grailsApplication
-
 	@Value('${com.recomdata.gwas.usehg19table:false}')
 	private boolean usehg19table
+
+	@Autowired private DataSource dataSource
 
 	Map getGeneLimits(Long searchId, String ver, Long flankingRegion) {
 
@@ -82,8 +81,9 @@ class RegionSearchService {
 		}
 	}
 
-	Map getAnalysisData(List<Long> analysisIds, ranges, Long limit, Long offset, Double cutoff, String sortField,
-	                    String order, String search, String type, geneNames, transcriptGeneNames, doCount) {
+	Map getAnalysisData(List<Long> analysisIds, List<Map> ranges, Long limit, Long offset,
+	                    Double cutoff, String sortField, String order, String search, String type,
+	                    List<String> geneNames, List<String> transcriptGeneNames, boolean doCount) {
 
 		StringBuilder analysisQCriteria = new StringBuilder()
 		StringBuilder queryCriteria = new StringBuilder()

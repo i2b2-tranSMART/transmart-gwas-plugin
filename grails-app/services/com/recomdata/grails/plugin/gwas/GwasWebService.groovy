@@ -21,9 +21,9 @@ package com.recomdata.grails.plugin.gwas
 
 import groovy.sql.Sql
 import groovy.util.logging.Slf4j
-import org.codehaus.groovy.grails.commons.GrailsApplication
+import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.beans.factory.annotation.Value
-import org.transmart.searchapp.AuthUser
+import org.transmart.plugin.shared.SecurityService
 import org.transmart.searchapp.AuthUserSecureAccess
 import org.transmart.searchapp.SecureAccessLevel
 import org.transmart.searchapp.SecureObject
@@ -38,137 +38,83 @@ class GwasWebService {
 	// the column delimiter in the method to write the data file below.
 	private static final String valueDelimiter = '\t'
 
-	DataSource dataSource
-	GrailsApplication grailsApplication
-
 	@Value('${RModules.tempFolderDirectory:}')
 	private String tempFolderDirectory
 
-	List computeGeneBounds(String geneSymbol, String geneSourceId, String snpSource) {
+	@Autowired private DataSource dataSource
+	@Autowired private SecurityService securityService
+
+	List<List> computeGeneBounds(String geneSymbol, String snpSource) {
 		def row = new Sql(dataSource).firstRow(geneLimitsSqlQueryByKeyword, geneSymbol, snpSource)
 		if (row) {
-			[row.low, row.high, row.chrom]
+			[[row.low, row.high, row.chrom]]
 		}
 	}
 
-	def getGeneByPosition(String chromosome, Long start, Long stop, String snpSource) {
-		def query = genePositionSqlQuery
-		def geneQuery = geneLimitsSqlQueryByEntrez
+	List<List> getGeneByPosition(String chromosome, Long start, Long stop, String snpSource) {
+		List<List> results = []
+		new Sql(dataSource).eachRow(genePositionSqlQuery, [chromosome, start, stop, snpSource]) { row ->
+			long entrezGeneId = row.ENTREZ_GENE_ID
+			String bioMarkerId = row.BIO_MARKER_ID
+			String bioMarkerName = row.BIO_MARKER_NAME
+			String bioMarkerDesc = row.BIO_MARKER_DESCRIPTION
 
-		//Create objects we use to form JDBC connection.
-		def con, stmt, rs = null
-		def geneStmt, geneInfoStmt, geneRs, geneInfoRs = null
+			def innerRow = new Sql(dataSource).firstRow(getGeneStrand, [entrezGeneId.toString()])
+			int strand = innerRow ? (int) innerRow.STRAND : 0
 
-		//Grab the connection from the grails object.
-		con = dataSource.getConnection()
-
-		//Prepare the SQL statement.
-		stmt = con.prepareStatement(query)
-		stmt.setString(1, chromosome)
-		stmt.setLong(2, start)
-		stmt.setLong(3, stop)
-		stmt.setString(4, snpSource)
-		rs = stmt.executeQuery()
-
-		def results = []
-
-		geneStmt = con.prepareStatement(geneQuery)
-		geneInfoStmt = con.prepareStatement(getGeneStrand)
-
-		try {
-			while (rs.next()) {
-
-				def entrezGeneId = rs.getLong('ENTREZ_GENE_ID')
-				geneInfoStmt.setString(1, entrezGeneId.toString())
-				geneInfoRs = geneInfoStmt.executeQuery()
-				def strand = 0
-				try {
-					if (geneInfoRs.next()) {
-						strand = geneInfoRs.getString('STRAND')
-					}
-				}
-				finally {
-					geneInfoRs.close()
-				}
-				logger.debug 'Gene strand query:{}', geneInfoRs
-				geneStmt.setString(1, entrezGeneId.toString())
-				geneStmt.setString(2, snpSource)
-				geneRs = geneStmt.executeQuery()
-				try {
-					if (geneRs.next()) {
-						results.push([
-								rs.getString('BIO_MARKER_ID'),
-								'GRCh37',
-								rs.getString('BIO_MARKER_NAME'),
-								rs.getString('BIO_MARKER_DESCRIPTION'),
-								geneRs.getString('CHROM'),
-								geneRs.getLong('LOW'),
-								geneRs.getLong('HIGH'),
-								strand,
-								0,
-								rs.getLong('ENTREZ_GENE_ID')
-						])
-					}
-				}
-				finally {
-					geneRs?.close()
-				}
+			innerRow = new Sql(dataSource).firstRow(geneLimitsSqlQueryByEntrez, [entrezGeneId.toString(), snpSource])
+			if (innerRow) {
+				results << [bioMarkerId, 'GRCh37', bioMarkerName, bioMarkerDesc, innerRow.CHROM,
+				            innerRow.LOW, innerRow.HIGH, strand, 0, entrezGeneId]
 			}
+		}
 
-			return results
-		}
-		finally {
-			rs?.close()
-			geneRs?.close()
-			stmt?.close()
-			geneStmt?.close()
-			con?.close()
-		}
+		results
 	}
 
 	List<List> getModelInfo(String type) {
-		modelInfo type, null
+		modelInfo type, false
 	}
 
-	List<List> getSecureModelInfo(String type, String user) {
-		modelInfo type, user
+	List<List> getSecureModelInfo(String type) {
+		modelInfo type, true
 	}
 
-	private List<List> modelInfo(String type, String user) {
+	private List<List> modelInfo(String type, boolean secure) {
 		List<List> results = []
 		new Sql(dataSource).eachRow(modelInfoSqlQuery, [type]) { row ->
 			String studyName = row.studyName
-			if (user && checkSecureStudyAccess(user.toLowerCase(), studyName)) {
+			if (secure && checkSecureStudyAccess(studyName)) {
 				results << [row.id, row.modelName, row.analysisName, studyName]
 			}
 		}
 		results
 	}
 
-	boolean checkSecureStudyAccess(String username, String accession) {
-		logger.debug 'checking security for the user: {}', username
+	private boolean checkSecureStudyAccess(String accession) {
+		logger.debug 'checking security for the user: {}', securityService.currentUsername()
 		Map<String, Long> secObjs = getExperimentSecureStudyList()
-		if (!secObjs.containsKey(accession)) {
-			return true
+		if (secObjs.containsKey(accession)) {
+			getGWASAccess(accession) != 'Locked'
 		}
-
-		getGWASAccess(accession, AuthUser.findByUsername(username)) != 'Locked'
+		else {
+			true
+		}
 	}
 
-	String getGWASAccess(String studyId, AuthUser user) {
+	String getGWASAccess(String studyId) {
 
-		for (role in user.authorities) {
-			if (isAdminRole(role)) {
-				return 'Admin' //just set everything to admin and return it all
-			}
+		if (securityService.principal().isAdminOrDseAdmin()) {
+			return 'Admin' //just set everything to admin and return it all
 		}
 
-		Map<String, String> tokens = getSecureTokensWithAccessForUser(user)
+		Map<String, String> tokens = getSecureTokensWithAccessForUser()
 		if (tokens.containsKey('EXP:' + studyId)) { //null tokens are assumed to be unlocked
-			return tokens['EXP:' + studyId]; //found access for this token so put in access level
+			tokens['EXP:' + studyId] //found access for this token so put in access level
 		}
-
-		'Locked'; //didn't find authorization for this token
+		else {
+			'Locked' //didn't find authorization for this token
+		}
 	}
 
 	//return access levels for the children of this path that have them
@@ -187,7 +133,7 @@ class GwasWebService {
 	}
 
 	//return access levels for the children of this path that have them
-	Map<String, String> getSecureTokensWithAccessForUser(user) {
+	private Map<String, String> getSecureTokensWithAccessForUser() {
 		Map<String, String> t = [:]
 		List<Object[]> results = AuthUserSecureAccess.executeQuery('''
 				SELECT DISTINCT ausa.accessLevel, so.bioDataUniqueId
@@ -195,7 +141,7 @@ class GwasWebService {
 				JOIN ausa.accessLevel
 				JOIN ausa.secureObject so
 				WHERE ausa.authUser IS NULL
-				   OR ausa.authUser.id = ?''', [user.id])
+				   OR ausa.authUser.id = ?''', [securityService.currentUserId()])
 		for (Object[] row in results) {
 			SecureAccessLevel accessLevel = row[0]
 			String token = row[1]
@@ -205,12 +151,8 @@ class GwasWebService {
 		return t
 	}
 
-	def isAdminRole(role) {
-		role.authority == 'ROLE_ADMIN' || role.authority == 'ROLE_DATASET_EXPLORER_ADMIN'
-	}
-
 	//Get all data for the given analysisIds that falls between the limits
-	List<List> getAnalysisDataBetween(analysisIds, low, high, chrom, snpSource) {
+	List<List> getAnalysisDataBetween(String[] analysisIds, long low, long high, String chrom, String snpSource) {
 		List<List> results = []
 		new Sql(dataSource).eachRow(analysisDataSqlQueryGwas + analysisIds.join(',') + ')', [low, high, String.valueOf(chrom), snpSource]) { row ->
 			results << [row.rsid, row.resultid, row.analysisid, row.pvalue, row.logpvalue, row.studyname,
@@ -228,9 +170,10 @@ class GwasWebService {
 		results
 	}
 
-	def snpSearch(analysisIds, Long range, String rsId, String hgVersion) {
+	List<List> snpSearch(analysisIds, Long range, String rsId, String hgVersion) {
 		List<List> results = []
-		new Sql(dataSource).eachRow(snpSearchQuery.replace('_analysisIds_', analysisIds.join(',')), [range, range, rsId, hgVersion, hgVersion]) { row ->
+		String sql = snpSearchQuery.replace('_analysisIds_', analysisIds.join(','))
+		new Sql(dataSource).eachRow(sql, [range, range, rsId, hgVersion, hgVersion]) { row ->
 			results << [row.rs_id, row.chrom, row.pos, row.LOG_P_VALUE, row.analysis_name,
 			            row.gene, row.exon_intron, row.recombination_rate, row.regulome_score]
 		}
@@ -249,7 +192,7 @@ class GwasWebService {
 		try {
 			String jobTmpDirectory = tempFolderDirectory + '/' + jobName + '/'
 			new File(jobTmpDirectory + 'workingDirectory').mkdirs()
-			return jobTmpDirectory
+			jobTmpDirectory
 		}
 		catch (e) {
 			throw new Exception('Failed to create Temporary Directories. Please contact an administrator.', e)
@@ -259,17 +202,16 @@ class GwasWebService {
 	/*
 	 * Writes a file based on a passed in array of arrays.
 	 */
-	String writeDataFile(tempDirectory, dataToWrite, fileName) {
+	String writeDataFile(String tempDirectory, List<List> dataToWrite, String fileName) {
 
 		File outputFile = new File(tempDirectory, fileName)
-		String filePath = outputFile.absolutePath
 		BufferedWriter output = outputFile.newWriter(true)
 
 		try {
-			dataToWrite.each { data ->
-				data.each {
-					output.write(it.toString())
-					output.write(valueDelimiter)
+			for (List data in dataToWrite) {
+				for (datum in data) {
+					output.write datum.toString()
+					output.write valueDelimiter
 				}
 				output.newLine()
 			}
@@ -282,7 +224,7 @@ class GwasWebService {
 			output?.close()
 		}
 
-		filePath
+		outputFile.absolutePath
 	}
 
 	private static final String geneLimitsSqlQueryByKeyword = '''
@@ -292,15 +234,6 @@ class GwasWebService {
 		INNER JOIN deapp.de_snp_gene_map gmap ON gmap.entrez_gene_id = bm.PRIMARY_EXTERNAL_ID
 		INNER JOIN DEAPP.DE_RC_SNP_INFO snpinfo ON gmap.snp_name = snpinfo.rs_id
 		WHERE KEYWORD=? AND snpinfo.hg_version = ?
-	'''
-
-	private static final String geneLimitsSqlQueryById = '''
-		SELECT BIO_MARKER_ID, max(snpinfo.pos) as high, min(snpinfo.pos) as low, min(snpinfo.chrom) as chrom
-		from BIOMART.bio_marker bm
-		INNER JOIN deapp.de_snp_gene_map gmap ON gmap.entrez_gene_id = bm.PRIMARY_EXTERNAL_ID
-		INNER JOIN DEAPP.DE_RC_SNP_INFO snpinfo ON gmap.snp_name = snpinfo.rs_id
-		WHERE BIO_MARKER_ID = ? AND snpinfo.hg_version = ?
-		GROUP BY BIO_MARKER_ID
 	'''
 
 	private static final String geneLimitsSqlQueryByEntrez = '''
@@ -368,8 +301,8 @@ class GwasWebService {
 	'''
 
 	private static final String analysisDataSqlQueryGwas = '''
-		SELECT gwas.rs_id as rsid, gwas.bio_asy_analysis_gwas_id as resultid, gwas.bio_assay_analysis_id as analysisid, 
-		       gwas.p_value as pvalue, gwas.log_p_value as logpvalue, be.accession as studyname, baa.analysis_name as analysisname, 
+		SELECT gwas.rs_id as rsid, gwas.bio_asy_analysis_gwas_id as resultid, gwas.bio_assay_analysis_id as analysisid,
+		       gwas.p_value as pvalue, gwas.log_p_value as logpvalue, be.accession as studyname, baa.analysis_name as analysisname,
 		       baa.bio_assay_data_type AS datatype, info.pos as posstart, info.chrom as chromosome, info.gene_name as gene,
 		       info.exon_intron as intronexon, info.recombination_rate as recombinationrate, info.regulome_score as regulome
 		FROM biomart.Bio_Assay_Analysis_Gwas gwas
@@ -380,21 +313,6 @@ class GwasWebService {
 		  AND chrom = ?
 		  AND info.hg_version = ?
     	  AND gwas.bio_assay_analysis_id IN (
-	'''
-
-	private static final String analysisDataSqlQueryEqtl = '''
-		SELECT eqtl.rs_id as rsid, eqtl.bio_asy_analysis_data_id as resultid, eqtl.bio_assay_analysis_id as analysisid,
-		       eqtl.p_value as pvalue, eqtl.log_p_value as logpvalue, be.title as studyname, baa.analysis_name as analysisname,
-		       baa.bio_assay_data_type AS datatype, info.pos as posstart, info.chrom as chromosome, info.gene_name as gene,
-		       info.exon_intron as intronexon, info.recombination_rate as recombinationrate, info.regulome_score as regulome
-		FROM biomart.Bio_Assay_Analysis_eqtl eqtl
-		LEFT JOIN deapp.de_rc_snp_info info ON eqtl.rs_id = info.rs_id
-		LEFT JOIN biomart.Bio_Assay_Analysis baa ON baa.bio_assay_analysis_id = eqtl.bio_assay_analysis_id
-		LEFT JOIN biomart.bio_experiment be ON be.accession = baa.etl_id
-		WHERE (info.pos BETWEEN ? AND ?)
-		  AND chrom = ?
-		  AND info.hg_version = ?
-		  AND eqtl.bio_assay_analysis_id IN (
 	'''
 
 	private static final String recombinationRateBySnpQuery = '''
