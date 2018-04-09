@@ -18,12 +18,13 @@ grails.project.dependency.resolution = {
 
 	dependencies {
 		compile 'org.transmartproject:transmart-core-api:16.2'
+		test 'org.grails:grails-datastore-test-support:1.0.2-grails-2.4'
 	}
 
 	plugins {
 		compile ':cache:1.1.8'
 		compile ':hibernate:3.6.10.19', { export = false }
-		compile ':mail:1.0'
+		compile ':mail:1.0.7'
 
 		compile ':folder-management:18.1-SNAPSHOT'
 		compile ':search-domain:18.1-SNAPSHOT'
