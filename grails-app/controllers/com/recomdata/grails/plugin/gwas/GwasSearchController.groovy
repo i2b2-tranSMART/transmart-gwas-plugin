@@ -331,7 +331,7 @@ class GwasSearchController {
 				}
 
 				//Swap around the data types for easy array addition.
-				List finalFields = new ArrayList(Arrays.asList(newLargeTextField))
+				List<String> finalFields = newLargeTextField as List
 
 				//Add the non-dynamic meta data fields to the returned data.
 				temporaryList << data[4]
@@ -478,7 +478,7 @@ class GwasSearchController {
 				}
 
 				//Swap around the data types for easy array addition.
-				List finalFields = new ArrayList(Arrays.asList(newLargeTextField))
+				List<String> finalFields = newLargeTextField as List
 
 				//Add the non-dynamic meta data fields to the returned data.
 				temporaryList << data[0]

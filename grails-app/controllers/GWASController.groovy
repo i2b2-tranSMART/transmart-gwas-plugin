@@ -329,7 +329,7 @@ class GWASController {
 				}
 
 				String ffClause = 'facet.field=' + ff
-				if (facetedFields == '') {
+				if (!facetedFields) {
 					facetedFields = ffClause
 				}
 				else {
